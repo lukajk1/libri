@@ -39,7 +39,6 @@ dependencies:
   path: ^1.9.0
   archive: ^3.4.0
   xml: ^6.0.0
-  path_provider: ^2.1.0
   shared_preferences: ^2.2.0
 
 dev_dependencies:

@@ -7,7 +7,6 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:xml/xml.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -37,25 +36,20 @@ class BookEntry {
 }
 
 Future<Directory> _booksDir() async {
-  final appData = await getApplicationSupportDirectory();
-  final dir = Directory(p.join(appData.path, 'books'));
+  final roaming = Platform.environment['APPDATA'] ?? '.';
+  final dir = Directory(p.join(roaming, 'Libri', 'books'));
   if (!await dir.exists()) await dir.create(recursive: true);
   return dir;
 }
 
-Future<Uint8List?> _extractEpubCover(String path) async {
+Future<Uint8List?> _extractEpubCoverBytes(String bookPath) async {
   try {
-    final archive = ZipDecoder().decodeBytes(await File(path).readAsBytes());
-
+    final archive = ZipDecoder().decodeBytes(await File(bookPath).readAsBytes());
     final container = archive.findFile('META-INF/container.xml');
     if (container == null) return null;
     final containerXml = XmlDocument.parse(utf8.decode(container.content as List<int>));
-    final opfPath = containerXml
-        .findAllElements('rootfile')
-        .first
-        .getAttribute('full-path');
+    final opfPath = containerXml.findAllElements('rootfile').first.getAttribute('full-path');
     if (opfPath == null) return null;
-
     final opfFile = archive.findFile(opfPath);
     if (opfFile == null) return null;
     final opfXml = XmlDocument.parse(utf8.decode(opfFile.content as List<int>));
@@ -78,7 +72,6 @@ Future<Uint8List?> _extractEpubCover(String path) async {
         }
       }
     }
-
     if (coverHref == null) {
       for (final item in opfXml.findAllElements('item')) {
         final id = item.getAttribute('id')?.toLowerCase() ?? '';
@@ -98,6 +91,32 @@ Future<Uint8List?> _extractEpubCover(String path) async {
   } catch (_) {
     return null;
   }
+}
+
+// Adds a book to its own subfolder, extracts and caches cover.jpg.
+// Returns the path to the book file inside the subfolder.
+Future<({String bookPath, Uint8List? coverBytes})> _importBook(String sourcePath, Directory booksDir) async {
+  final name = p.basenameWithoutExtension(sourcePath);
+  final ext = p.extension(sourcePath);
+  final bookDir = Directory(p.join(booksDir.path, name));
+  if (!await bookDir.exists()) await bookDir.create();
+  final bookPath = p.join(bookDir.path, 'book$ext');
+  await File(sourcePath).copy(bookPath);
+
+  Uint8List? coverBytes;
+  if (ext.toLowerCase() == '.epub') {
+    coverBytes = await _extractEpubCoverBytes(bookPath);
+    if (coverBytes != null) {
+      await File(p.join(bookDir.path, 'cover.jpg')).writeAsBytes(coverBytes);
+    }
+  }
+  return (bookPath: bookPath, coverBytes: coverBytes);
+}
+
+Future<Uint8List?> _loadCachedCover(String bookPath) async {
+  final coverFile = File(p.join(p.dirname(bookPath), 'cover.jpg'));
+  if (await coverFile.exists()) return coverFile.readAsBytes();
+  return null;
 }
 
 class LibriApp extends StatelessWidget {
@@ -125,6 +144,7 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   final List<BookEntry> _books = [];
+  final ValueNotifier<String?> _selectedPath = ValueNotifier(null);
   bool _loading = true;
 
   @override
@@ -141,7 +161,7 @@ class _LibraryPageState extends State<LibraryPage> {
     for (int i = 0; i < stored.length; i++) {
       final path = stored[i];
       if (!await File(path).exists()) continue;
-      final cover = await _extractEpubCover(path);
+      final cover = await _loadCachedCover(path);
       final status = i < statuses.length
           ? BookStatus.values.firstWhere((s) => s.name == statuses[i], orElse: () => BookStatus.none)
           : BookStatus.none;
@@ -161,12 +181,11 @@ class _LibraryPageState extends State<LibraryPage> {
     for (final path in paths) {
       final ext = p.extension(path).toLowerCase();
       if (ext != '.epub' && ext != '.mobi') continue;
-      final dest = p.join(dir.path, p.basename(path));
-      if (_books.any((b) => b.storedPath == dest)) continue;
-      await File(path).copy(dest);
-      final cover = await _extractEpubCover(dest);
+      final name = p.basenameWithoutExtension(path);
+      if (_books.any((b) => b.fileName == name)) continue;
+      final result = await _importBook(path, dir);
       setState(() {
-        _books.add(BookEntry(fileName: p.basenameWithoutExtension(path), storedPath: dest, coverBytes: cover));
+        _books.add(BookEntry(fileName: name, storedPath: result.bookPath, coverBytes: result.coverBytes));
       });
     }
     await _persist();
@@ -177,7 +196,7 @@ class _LibraryPageState extends State<LibraryPage> {
     _persist();
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     return DropTarget(
       onDragEntered: (_) => setState(() {}),
@@ -240,19 +259,20 @@ class _LibraryPageState extends State<LibraryPage> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
         if (reading.isNotEmpty)
-          _Section(title: 'Reading', books: reading, onSetStatus: _setStatus),
+          _Section(title: 'Reading', books: reading, selectedPath: _selectedPath, onSetStatus: _setStatus),
         if (toRead.isNotEmpty)
-          _Section(title: 'To Read', books: toRead, onSetStatus: _setStatus),
-        _Section(title: 'All', books: _books, onSetStatus: _setStatus),
+          _Section(title: 'To Read', books: toRead, selectedPath: _selectedPath, onSetStatus: _setStatus),
+        _Section(title: 'All', books: _books, selectedPath: _selectedPath, onSetStatus: _setStatus),
       ],
     );
   }
 }
 
 class _Section extends StatefulWidget {
-  const _Section({required this.title, required this.books, required this.onSetStatus});
+  const _Section({required this.title, required this.books, required this.selectedPath, required this.onSetStatus});
   final String title;
   final List<BookEntry> books;
+  final ValueNotifier<String?> selectedPath;
   final void Function(BookEntry, BookStatus) onSetStatus;
 
   @override
@@ -288,7 +308,7 @@ class _SectionState extends State<_Section> {
         if (_expanded)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _BookGrid(books: widget.books, onSetStatus: widget.onSetStatus),
+            child: _BookGrid(books: widget.books, selectedPath: widget.selectedPath, onSetStatus: widget.onSetStatus),
           ),
       ],
     );
@@ -296,8 +316,9 @@ class _SectionState extends State<_Section> {
 }
 
 class _BookGrid extends StatelessWidget {
-  const _BookGrid({required this.books, required this.onSetStatus});
+  const _BookGrid({required this.books, required this.selectedPath, required this.onSetStatus});
   final List<BookEntry> books;
+  final ValueNotifier<String?> selectedPath;
   final void Function(BookEntry, BookStatus) onSetStatus;
 
   @override
@@ -305,8 +326,6 @@ class _BookGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         const tileWidth = 120.0;
-        final cols = (constraints.maxWidth / (tileWidth + 12)).floor().clamp(1, 99);
-        final tileHeight = tileWidth / 0.65;
         return Wrap(
           spacing: 12,
           runSpacing: 12,
@@ -314,8 +333,7 @@ class _BookGrid extends StatelessWidget {
             for (final book in books)
               SizedBox(
                 width: tileWidth,
-                height: tileHeight,
-                child: _BookTile(book: book, onSetStatus: onSetStatus),
+                child: _BookTile(book: book, selectedPath: selectedPath, onSetStatus: onSetStatus),
               ),
           ],
         );
@@ -324,12 +342,18 @@ class _BookGrid extends StatelessWidget {
   }
 }
 
-class _BookTile extends StatelessWidget {
-  const _BookTile({required this.book, required this.onSetStatus});
+class _BookTile extends StatefulWidget {
+  const _BookTile({required this.book, required this.selectedPath, required this.onSetStatus});
   final BookEntry book;
+  final ValueNotifier<String?> selectedPath;
   final void Function(BookEntry, BookStatus) onSetStatus;
 
-  void _open() => Process.run('cmd', ['/c', 'start', '', book.storedPath]);
+  @override
+  State<_BookTile> createState() => _BookTileState();
+}
+
+class _BookTileState extends State<_BookTile> {
+  void _open() => Process.run('cmd', ['/c', 'start', '', widget.book.storedPath]);
 
   void _showContextMenu(BuildContext context, Offset position) {
     showMenu<Object>(
@@ -338,46 +362,71 @@ class _BookTile extends StatelessWidget {
       popUpAnimationStyle: AnimationStyle.noAnimation,
       items: [
         const PopupMenuItem(value: 'open', child: Text('Open')),
-        const PopupMenuItem(value: 'show', child: Text('Show in Explorer')),
         const PopupMenuDivider(),
-        if (book.status != BookStatus.reading)
+        if (widget.book.status != BookStatus.reading)
           const PopupMenuItem(value: BookStatus.reading, child: Text('Mark as Reading')),
-        if (book.status != BookStatus.toRead)
+        if (widget.book.status != BookStatus.toRead)
           const PopupMenuItem(value: BookStatus.toRead, child: Text('Mark as To Read')),
-        if (book.status != BookStatus.none)
+        if (widget.book.status != BookStatus.none)
           const PopupMenuItem(value: BookStatus.none, child: Text('Remove Status')),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'show', child: Text('Show in Explorer')),
       ],
     ).then((value) {
       if (value == 'open') _open();
-      else if (value == 'show') Process.run('explorer.exe', ['/select,', book.storedPath]);
-      else if (value is BookStatus) onSetStatus(book, value);
+      else if (value == 'show') Process.run('explorer.exe', ['/select,"${widget.book.storedPath}"']);
+      else if (value is BookStatus) widget.onSetStatus(widget.book, value);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      onTap: () {
+        final path = widget.book.storedPath;
+        widget.selectedPath.value = widget.selectedPath.value == path ? null : path;
+      },
       onDoubleTap: _open,
       onSecondaryTapUp: (d) => _showContextMenu(context, d.globalPosition),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: book.coverBytes != null
-                  ? Image.memory(book.coverBytes!, fit: BoxFit.cover)
-                  : _placeholder(),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            book.fileName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, color: Colors.white70),
-          ),
-        ],
+      child: ValueListenableBuilder<String?>(
+        valueListenable: widget.selectedPath,
+        builder: (context, selected, _) {
+          final isSelected = selected == widget.book.storedPath;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 160,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      widget.book.coverBytes != null
+                          ? Image.memory(widget.book.coverBytes!, fit: BoxFit.contain)
+                          : _placeholder(),
+                      if (isSelected)
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.white, width: 2),
+                            borderRadius: BorderRadius.circular(4),
+                            color: Colors.white.withOpacity(0.1),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                widget.book.fileName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: isSelected ? Colors.white : Colors.white70),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -389,7 +438,7 @@ class _BookTile extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Text(
-            book.fileName,
+            widget.book.fileName,
             textAlign: TextAlign.center,
             maxLines: 4,
             overflow: TextOverflow.ellipsis,

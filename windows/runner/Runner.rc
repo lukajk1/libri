@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "Umbra Tags" "\0"
-            VALUE "FileDescription", "Umbra Tags" "\0"
+            VALUE "CompanyName", "libri" "\0"
+            VALUE "FileDescription", "libri" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "Umbra Tags" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 Umbra Tags. All rights reserved." "\0"
-            VALUE "OriginalFilename", "flutter_gallery_test.exe" "\0"
-            VALUE "ProductName", "Umbra Tags" "\0"
+            VALUE "InternalName", "libri" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 libri. All rights reserved." "\0"
+            VALUE "OriginalFilename", "libri.exe" "\0"
+            VALUE "ProductName", "libri" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
