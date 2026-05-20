@@ -56,6 +56,7 @@ Future<void> writeLibraryJson(String libraryPath, List<BookEntry> books) async {
     'path': b.storedPath,
     'status': b.status.name,
     'importedAt': b.importedAt,
+    'statusChangedAt': b.statusChangedAt,
   }).toList();
   await f.writeAsString(jsonEncode(data));
 }

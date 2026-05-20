@@ -72,12 +72,14 @@ class _LibraryPageState extends State<LibraryPage> {
         orElse: () => BookStatus.none,
       );
       final importedAt = (entry['importedAt'] as num?)?.toInt() ?? 0;
+      final statusChangedAt = (entry['statusChangedAt'] as num?)?.toInt();
       books.add(BookEntry(
         fileName: p.basenameWithoutExtension(path),
         storedPath: path,
         coverBytes: cover,
         status: status,
         importedAt: importedAt,
+        statusChangedAt: statusChangedAt,
       ));
     }
     if (mounted) setState(() { _books.addAll(books); _loading = false; });
@@ -109,7 +111,10 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   void _setStatus(BookEntry book, BookStatus status) {
-    setState(() => book.status = status);
+    setState(() {
+      book.status = status;
+      book.statusChangedAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    });
     _persist();
   }
 
@@ -222,9 +227,13 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Widget _sections() {
-    final reading = _books.where((b) => b.status == BookStatus.reading).toList();
-    final toRead = _books.where((b) => b.status == BookStatus.toRead).toList();
-    final completed = _books.where((b) => b.status == BookStatus.completed).toList();
+    int byStatusChanged(BookEntry a, BookEntry b) => b.statusChangedAt.compareTo(a.statusChangedAt);
+    int byImported(BookEntry a, BookEntry b) => b.importedAt.compareTo(a.importedAt);
+
+    final reading = _books.where((b) => b.status == BookStatus.reading).toList()..sort(byStatusChanged);
+    final toRead = _books.where((b) => b.status == BookStatus.toRead).toList()..sort(byStatusChanged);
+    final completed = _books.where((b) => b.status == BookStatus.completed).toList()..sort(byStatusChanged);
+    final all = [..._books]..sort(byImported);
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -232,7 +241,7 @@ class _LibraryPageState extends State<LibraryPage> {
         LibrarySection(title: 'Reading', books: reading, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
         LibrarySection(title: 'To Read', books: toRead, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
         LibrarySection(title: 'Completed', books: completed, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
-        LibrarySection(title: 'All', books: _books, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'All', books: all, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
       ],
     );
   }

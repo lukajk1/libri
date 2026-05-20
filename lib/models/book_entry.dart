@@ -8,6 +8,7 @@ class BookEntry {
   final Uint8List? coverBytes;
   final int importedAt;
   BookStatus status;
+  int statusChangedAt;
 
   BookEntry({
     required this.fileName,
@@ -15,5 +16,6 @@ class BookEntry {
     required this.importedAt,
     this.coverBytes,
     this.status = BookStatus.none,
-  });
+    int? statusChangedAt,
+  }) : statusChangedAt = statusChangedAt ?? importedAt;
 }
