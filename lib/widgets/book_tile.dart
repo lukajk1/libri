@@ -22,11 +22,13 @@ class BookTile extends StatefulWidget {
     required this.book,
     required this.selectedPath,
     required this.onSetStatus,
+    required this.onRemove,
   });
 
   final BookEntry book;
   final ValueNotifier<String?> selectedPath;
   final void Function(BookEntry, BookStatus) onSetStatus;
+  final void Function(BookEntry) onRemove;
 
   @override
   State<BookTile> createState() => _BookTileState();
@@ -53,10 +55,13 @@ class _BookTileState extends State<BookTile> {
           const PopupMenuItem(value: BookStatus.none, child: Text('Remove Status')),
         const PopupMenuDivider(),
         const PopupMenuItem(value: 'show', child: Text('Show in Explorer')),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'remove', child: Text('Remove from Library')),
       ],
     ).then((value) {
       if (value == 'open') _open();
       else if (value == 'show') Process.run('explorer.exe', ['/select,"${widget.book.storedPath}"']);
+      else if (value == 'remove') widget.onRemove(widget.book);
       else if (value is BookStatus) widget.onSetStatus(widget.book, value);
     });
   }

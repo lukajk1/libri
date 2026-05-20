@@ -150,7 +150,7 @@ Future<({String bookPath, Uint8List? coverBytes})> importBook(String sourcePath,
   final ext = p.extension(sourcePath);
   final bookDir = Directory(p.join(booksDirPath.path, name));
   if (!await bookDir.exists()) await bookDir.create();
-  final bookPath = p.join(bookDir.path, 'book$ext');
+  final bookPath = p.join(bookDir.path, p.basename(sourcePath));
   await File(sourcePath).copy(bookPath);
 
   Uint8List? coverBytes;

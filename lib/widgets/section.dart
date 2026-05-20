@@ -10,12 +10,14 @@ class LibrarySection extends StatefulWidget {
     required this.books,
     required this.selectedPath,
     required this.onSetStatus,
+    required this.onRemove,
   });
 
   final String title;
   final List<BookEntry> books;
   final ValueNotifier<String?> selectedPath;
   final void Function(BookEntry, BookStatus) onSetStatus;
+  final void Function(BookEntry) onRemove;
 
   @override
   State<LibrarySection> createState() => _LibrarySectionState();
@@ -54,6 +56,7 @@ class _LibrarySectionState extends State<LibrarySection> {
               books: widget.books,
               selectedPath: widget.selectedPath,
               onSetStatus: widget.onSetStatus,
+              onRemove: widget.onRemove,
             ),
           ),
       ],

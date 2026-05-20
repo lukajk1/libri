@@ -21,10 +21,6 @@ class _LibraryPageState extends State<LibraryPage> {
   final ValueNotifier<String?> _selectedPath = ValueNotifier(null);
   String? _libraryPath;
   bool _loading = true;
-  bool _draggingSupported = false;
-  bool _draggingUnsupported = false;
-
-  static const _supported = {'.epub', '.mobi', '.pdf'};
 
   @override
   void initState() {
@@ -34,7 +30,8 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _init() async {
     final path = await loadLibraryPath();
-    if (path == null) {
+    final valid = path != null && await Directory(path).exists();
+    if (!valid) {
       await _pickLibraryPath(initial: true);
     } else {
       _libraryPath = path;
@@ -116,23 +113,41 @@ class _LibraryPageState extends State<LibraryPage> {
     _persist();
   }
 
+  Future<void> _removeBook(BookEntry book) async {
+    final bookDir = Directory(p.dirname(book.storedPath));
+    if (await bookDir.exists()) {
+      final contents = await bookDir.list().map((e) => p.basename(e.path)).toList();
+      const expected = {'cover.jpg'};
+      final unexpected = contents.where((f) => f != p.basename(book.storedPath) && !expected.contains(f)).toList();
+      if (unexpected.isNotEmpty) {
+        if (!mounted) return;
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Unexpected files'),
+            content: Text(
+              'The folder contains unexpected files:\n${unexpected.join(', ')}\n\nDelete anyway?',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+            ],
+          ),
+        );
+        if (confirm != true) return;
+      }
+      await bookDir.delete(recursive: true);
+    }
+    setState(() => _books.remove(book));
+    await _persist();
+  }
+
   @override
   Widget build(BuildContext context) {
     return DropTarget(
-      onDragEntered: (detail) {
-        final exts = detail.files.map((f) => p.extension(f.path).toLowerCase()).toSet();
-        final hasSupported = exts.any(_supported.contains);
-        final hasUnsupported = exts.any((e) => !_supported.contains(e));
-        setState(() {
-          _draggingSupported = hasSupported;
-          _draggingUnsupported = hasUnsupported && !hasSupported;
-        });
-      },
-      onDragExited: (_) => setState(() { _draggingSupported = false; _draggingUnsupported = false; }),
-      onDragDone: (detail) {
-        setState(() { _draggingSupported = false; _draggingUnsupported = false; });
-        _addFiles(detail.files.map((f) => f.path).toList());
-      },
+      onDragEntered: (_) {},
+      onDragExited: (_) {},
+      onDragDone: (detail) => _addFiles(detail.files.map((f) => f.path).toList()),
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 32,
@@ -162,34 +177,13 @@ class _LibraryPageState extends State<LibraryPage> {
             ],
           ),
         ),
-        body: Stack(
-          children: [
-            _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _libraryPath == null
-                    ? _noLibraryState()
-                    : _books.isEmpty
-                        ? _emptyState()
-                        : _sections(),
-            if (_draggingSupported || _draggingUnsupported)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    color: _draggingUnsupported
-                        ? Colors.red.withOpacity(0.15)
-                        : Colors.white.withOpacity(0.05),
-                    child: Center(
-                      child: Text(
-                        _draggingUnsupported ? 'Unsupported file type' : '',
-                        style: const TextStyle(color: Colors.red, fontSize: 14),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _libraryPath == null
+                ? _noLibraryState()
+                : _books.isEmpty
+                    ? _emptyState()
+                    : _sections(),
       ),
     );
   }
@@ -235,10 +229,10 @@ class _LibraryPageState extends State<LibraryPage> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        LibrarySection(title: 'Reading', books: reading, selectedPath: _selectedPath, onSetStatus: _setStatus),
-        LibrarySection(title: 'To Read', books: toRead, selectedPath: _selectedPath, onSetStatus: _setStatus),
-        LibrarySection(title: 'Completed', books: completed, selectedPath: _selectedPath, onSetStatus: _setStatus),
-        LibrarySection(title: 'All', books: _books, selectedPath: _selectedPath, onSetStatus: _setStatus),
+        LibrarySection(title: 'Reading', books: reading, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'To Read', books: toRead, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'Completed', books: completed, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'All', books: _books, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
       ],
     );
   }
