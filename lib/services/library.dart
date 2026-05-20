@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdf_render/pdf_render.dart';
 import 'package:xml/xml.dart';
 
 import '../models/book_entry.dart';
@@ -119,6 +121,24 @@ Future<Uint8List?> extractEpubCoverBytes(String bookPath) async {
   }
 }
 
+Future<Uint8List?> extractPdfCoverBytes(String bookPath) async {
+  try {
+    final doc = await PdfDocument.openFile(bookPath);
+    final page = await doc.getPage(1);
+    final image = await page.render(
+      width: page.width.toInt(),
+      height: page.height.toInt(),
+    );
+    final pngBytes = await image.createImageDetached().then((img) async {
+      final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+      return byteData?.buffer.asUint8List();
+    });
+    return pngBytes;
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<Uint8List?> loadCachedCover(String bookPath) async {
   final coverFile = File(p.join(p.dirname(bookPath), 'cover.jpg'));
   if (await coverFile.exists()) return coverFile.readAsBytes();
@@ -136,9 +156,11 @@ Future<({String bookPath, Uint8List? coverBytes})> importBook(String sourcePath,
   Uint8List? coverBytes;
   if (ext.toLowerCase() == '.epub') {
     coverBytes = await extractEpubCoverBytes(bookPath);
-    if (coverBytes != null) {
-      await File(p.join(bookDir.path, 'cover.jpg')).writeAsBytes(coverBytes);
-    }
+  } else if (ext.toLowerCase() == '.pdf') {
+    coverBytes = await extractPdfCoverBytes(bookPath);
+  }
+  if (coverBytes != null) {
+    await File(p.join(bookDir.path, 'cover.jpg')).writeAsBytes(coverBytes);
   }
   return (bookPath: bookPath, coverBytes: coverBytes);
 }

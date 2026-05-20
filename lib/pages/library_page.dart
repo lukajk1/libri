@@ -21,6 +21,10 @@ class _LibraryPageState extends State<LibraryPage> {
   final ValueNotifier<String?> _selectedPath = ValueNotifier(null);
   String? _libraryPath;
   bool _loading = true;
+  bool _draggingSupported = false;
+  bool _draggingUnsupported = false;
+
+  static const _supported = {'.epub', '.mobi', '.pdf'};
 
   @override
   void initState() {
@@ -91,7 +95,7 @@ class _LibraryPageState extends State<LibraryPage> {
     final dir = await booksDir(_libraryPath!);
     for (final path in paths) {
       final ext = p.extension(path).toLowerCase();
-      if (ext != '.epub' && ext != '.mobi') continue;
+      if (ext != '.epub' && ext != '.mobi' && ext != '.pdf') continue;
       final name = p.basenameWithoutExtension(path);
       if (_books.any((b) => b.fileName == name)) continue;
       final result = await importBook(path, dir);
@@ -115,9 +119,20 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     return DropTarget(
-      onDragEntered: (_) => setState(() {}),
-      onDragExited: (_) => setState(() {}),
-      onDragDone: (detail) => _addFiles(detail.files.map((f) => f.path).toList()),
+      onDragEntered: (detail) {
+        final exts = detail.files.map((f) => p.extension(f.path).toLowerCase()).toSet();
+        final hasSupported = exts.any(_supported.contains);
+        final hasUnsupported = exts.any((e) => !_supported.contains(e));
+        setState(() {
+          _draggingSupported = hasSupported;
+          _draggingUnsupported = hasUnsupported && !hasSupported;
+        });
+      },
+      onDragExited: (_) => setState(() { _draggingSupported = false; _draggingUnsupported = false; }),
+      onDragDone: (detail) {
+        setState(() { _draggingSupported = false; _draggingUnsupported = false; });
+        _addFiles(detail.files.map((f) => f.path).toList());
+      },
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 32,
@@ -147,13 +162,34 @@ class _LibraryPageState extends State<LibraryPage> {
             ],
           ),
         ),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _libraryPath == null
-                ? _noLibraryState()
-                : _books.isEmpty
-                    ? _emptyState()
-                    : _sections(),
+        body: Stack(
+          children: [
+            _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _libraryPath == null
+                    ? _noLibraryState()
+                    : _books.isEmpty
+                        ? _emptyState()
+                        : _sections(),
+            if (_draggingSupported || _draggingUnsupported)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    color: _draggingUnsupported
+                        ? Colors.red.withOpacity(0.15)
+                        : Colors.white.withOpacity(0.05),
+                    child: Center(
+                      child: Text(
+                        _draggingUnsupported ? 'Unsupported file type' : '',
+                        style: const TextStyle(color: Colors.red, fontSize: 14),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -184,7 +220,7 @@ class _LibraryPageState extends State<LibraryPage> {
         children: [
           Icon(Icons.menu_book_outlined, size: 64, color: Colors.white.withOpacity(0.15)),
           const SizedBox(height: 16),
-          Text('Drop epub or mobi files here',
+          Text('Drop epub, mobi, or pdf files here',
               style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 15)),
         ],
       ),
