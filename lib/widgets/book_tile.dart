@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/book_entry.dart';
 
@@ -60,7 +61,7 @@ class _BookTileState extends State<BookTile> {
       ],
     ).then((value) {
       if (value == 'open') _open();
-      else if (value == 'show') Process.run('explorer.exe', ['/select,"${widget.book.storedPath}"']);
+      else if (value == 'show') Process.run('explorer.exe', [p.dirname(widget.book.storedPath)]);
       else if (value == 'remove') widget.onRemove(widget.book);
       else if (value is BookStatus) widget.onSetStatus(widget.book, value);
     });
