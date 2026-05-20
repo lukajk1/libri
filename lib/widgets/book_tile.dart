@@ -22,12 +22,14 @@ class BookTile extends StatefulWidget {
     super.key,
     required this.book,
     required this.selectedPath,
+    required this.sectionKey,
     required this.onSetStatus,
     required this.onRemove,
   });
 
   final BookEntry book;
   final ValueNotifier<String?> selectedPath;
+  final String sectionKey;
   final void Function(BookEntry, BookStatus) onSetStatus;
   final void Function(BookEntry) onRemove;
 
@@ -71,15 +73,15 @@ class _BookTileState extends State<BookTile> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        final path = widget.book.storedPath;
-        widget.selectedPath.value = widget.selectedPath.value == path ? null : path;
+        final key = '${widget.sectionKey}::${widget.book.storedPath}';
+        widget.selectedPath.value = widget.selectedPath.value == key ? null : key;
       },
       onDoubleTap: _open,
       onSecondaryTapUp: (d) => _showContextMenu(context, d.globalPosition),
       child: ValueListenableBuilder<String?>(
         valueListenable: widget.selectedPath,
         builder: (context, selected, _) {
-          final isSelected = selected == widget.book.storedPath;
+          final isSelected = selected == '${widget.sectionKey}::${widget.book.storedPath}';
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

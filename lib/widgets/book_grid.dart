@@ -8,12 +8,14 @@ class BookGrid extends StatelessWidget {
     super.key,
     required this.books,
     required this.selectedPath,
+    required this.sectionKey,
     required this.onSetStatus,
     required this.onRemove,
   });
 
   final List<BookEntry> books;
   final ValueNotifier<String?> selectedPath;
+  final String sectionKey;
   final void Function(BookEntry, BookStatus) onSetStatus;
   final void Function(BookEntry) onRemove;
 
@@ -29,7 +31,7 @@ class BookGrid extends StatelessWidget {
             for (final book in books)
               SizedBox(
                 width: tileWidth,
-                child: BookTile(book: book, selectedPath: selectedPath, onSetStatus: onSetStatus, onRemove: onRemove),
+                child: BookTile(book: book, selectedPath: selectedPath, sectionKey: sectionKey, onSetStatus: onSetStatus, onRemove: onRemove),
               ),
           ],
         );

@@ -55,6 +55,7 @@ class _LibrarySectionState extends State<LibrarySection> {
             child: BookGrid(
               books: widget.books,
               selectedPath: widget.selectedPath,
+              sectionKey: widget.title,
               onSetStatus: widget.onSetStatus,
               onRemove: widget.onRemove,
             ),
