@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-enum BookStatus { none, toRead, reading, completed }
+enum BookStatus { none, toRead, reading, completed, dropped }
 
 class BookEntry {
   final String fileName;

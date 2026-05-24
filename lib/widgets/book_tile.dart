@@ -54,6 +54,8 @@ class _BookTileState extends State<BookTile> {
           const PopupMenuItem(value: BookStatus.toRead, child: Text('Mark as To Read')),
         if (widget.book.status != BookStatus.completed)
           const PopupMenuItem(value: BookStatus.completed, child: Text('Mark as Completed')),
+        if (widget.book.status != BookStatus.dropped)
+          const PopupMenuItem(value: BookStatus.dropped, child: Text('Mark as Dropped')),
         if (widget.book.status != BookStatus.none)
           const PopupMenuItem(value: BookStatus.none, child: Text('Remove Status')),
         const PopupMenuDivider(),

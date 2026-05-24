@@ -233,15 +233,17 @@ class _LibraryPageState extends State<LibraryPage> {
     final reading = _books.where((b) => b.status == BookStatus.reading).toList()..sort(byStatusChanged);
     final toRead = _books.where((b) => b.status == BookStatus.toRead).toList()..sort(byStatusChanged);
     final completed = _books.where((b) => b.status == BookStatus.completed).toList()..sort(byStatusChanged);
+    final dropped = _books.where((b) => b.status == BookStatus.dropped).toList()..sort(byStatusChanged);
     final all = [..._books]..sort(byImported);
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        LibrarySection(title: 'Reading', books: reading, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'Reading', books: reading, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook, alwaysExpanded: true),
         LibrarySection(title: 'To Read', books: toRead, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
         LibrarySection(title: 'Completed', books: completed, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
-        LibrarySection(title: 'All', books: all, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'Dropped', books: dropped, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'All', books: all, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook, alwaysExpanded: true),
       ],
     );
   }
