@@ -113,7 +113,7 @@ class _BookTileState extends State<BookTile> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 2),
                 child: Text(
-                  '${((widget.book.progress ?? 0) * 100).round()}%',
+                  _progressLabel(),
                   style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.white54),
                 ),
               ),
@@ -128,6 +128,12 @@ class _BookTileState extends State<BookTile> {
         },
       ),
     );
+  }
+
+  String _progressLabel() {
+    final progress = widget.book.progress;
+    if (progress != null) return '${(progress * 100).round()}%';
+    return widget.book.status == BookStatus.completed ? 'Finished' : '-';
   }
 
   Widget _placeholder() {
