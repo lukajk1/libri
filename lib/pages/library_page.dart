@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
@@ -66,7 +67,7 @@ class _LibraryPageState extends State<LibraryPage> {
     for (final entry in entries) {
       final path = entry['path'] as String;
       if (!await File(path).exists()) continue;
-      final cover = await loadCachedCover(path);
+      final cover = await loadOrExtractCover(path);
       final status = BookStatus.values.firstWhere(
         (s) => s.name == entry['status'],
         orElse: () => BookStatus.none,
@@ -94,10 +95,20 @@ class _LibraryPageState extends State<LibraryPage> {
     final dir = await booksDir(_libraryPath!);
     for (final path in paths) {
       final ext = p.extension(path).toLowerCase();
-      if (ext != '.epub' && ext != '.mobi' && ext != '.pdf') continue;
-      final name = p.basenameWithoutExtension(path);
+      if (ext != '.epub' && ext != '.mobi' && ext != '.azw' && ext != '.azw3' && ext != '.pdf') continue;
+      final name = bookNameFor(path, dir);
       if (_books.any((b) => b.fileName == name)) continue;
-      final result = await importBook(path, dir);
+      final ({String bookPath, Uint8List? coverBytes}) result;
+      try {
+        result = await importBook(path, dir);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not import ${p.basename(path)}: $e')),
+          );
+        }
+        continue;
+      }
       setState(() {
         _books.add(BookEntry(
           fileName: name,
