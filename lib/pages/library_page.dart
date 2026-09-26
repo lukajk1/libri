@@ -5,9 +5,11 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:window_manager/window_manager.dart';
 
 import '../models/book_entry.dart';
 import '../services/library.dart';
+import '../services/progress.dart';
 import '../widgets/section.dart';
 
 class LibraryPage extends StatefulWidget {
@@ -17,16 +19,81 @@ class LibraryPage extends StatefulWidget {
   State<LibraryPage> createState() => _LibraryPageState();
 }
 
-class _LibraryPageState extends State<LibraryPage> {
+class _LibraryPageState extends State<LibraryPage> with WindowListener {
   final List<BookEntry> _books = [];
   final ValueNotifier<String?> _selectedPath = ValueNotifier(null);
   String? _libraryPath;
   bool _loading = true;
+  bool _refreshingProgress = false;
+  bool _converting = false;
 
   @override
   void initState() {
     super.initState();
+    windowManager.addListener(this);
     _init();
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  // Coming back to libri usually means a reader was just closed.
+  @override
+  void onWindowFocus() => _refreshProgress();
+
+  Future<void> _refreshProgress() async {
+    if (_refreshingProgress || _books.isEmpty) return;
+    _refreshingProgress = true;
+    try {
+      final progress = await readProgress(_books.map((b) => b.storedPath).toList());
+      if (!mounted) return;
+      setState(() {
+        for (final b in _books) {
+          b.progress = progress[b.storedPath];
+        }
+      });
+    } finally {
+      _refreshingProgress = false;
+    }
+  }
+
+  /// Converts any MOBI/AZW/AZW3 books to EPUB (via Calibre) and points the
+  /// library at the EPUB. The original file stays in the book's folder.
+  Future<void> _convertKindleBooks() async {
+    if (_converting) return;
+    final pending = _books.where((b) => isKindleFormat(b.storedPath)).toList();
+    if (pending.isEmpty) return;
+    _converting = true;
+    try {
+      var converted = 0;
+      for (final book in pending) {
+        _showMessage('Converting ${book.fileName} to EPUB...');
+        final epub = await convertToEpub(book.storedPath);
+        if (epub == null) continue;
+        converted++;
+        if (!mounted) return;
+        setState(() => book.storedPath = epub);
+        await _persist();
+      }
+      if (converted < pending.length) {
+        _showMessage('Could not convert ${pending.length - converted} book(s) to EPUB. Is Calibre installed?');
+      } else {
+        _showMessage('Converted $converted book(s) to EPUB');
+      }
+      await _refreshProgress();
+    } finally {
+      _converting = false;
+    }
+  }
+
+  void _showMessage(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
   }
 
   Future<void> _init() async {
@@ -84,6 +151,8 @@ class _LibraryPageState extends State<LibraryPage> {
       ));
     }
     if (mounted) setState(() { _books.addAll(books); _loading = false; });
+    await _refreshProgress();
+    await _convertKindleBooks();
   }
 
   Future<void> _persist() async {
@@ -102,11 +171,7 @@ class _LibraryPageState extends State<LibraryPage> {
       try {
         result = await importBook(path, dir);
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not import ${p.basename(path)}: $e')),
-          );
-        }
+        _showMessage('Could not import ${p.basename(path)}: $e');
         continue;
       }
       setState(() {
@@ -119,6 +184,7 @@ class _LibraryPageState extends State<LibraryPage> {
       });
     }
     await _persist();
+    await _convertKindleBooks();
   }
 
   void _setStatus(BookEntry book, BookStatus status) {
@@ -133,8 +199,13 @@ class _LibraryPageState extends State<LibraryPage> {
     final bookDir = Directory(p.dirname(book.storedPath));
     if (await bookDir.exists()) {
       final contents = await bookDir.list().map((e) => p.basename(e.path)).toList();
-      const expected = {'cover.jpg'};
-      final unexpected = contents.where((f) => f != p.basename(book.storedPath) && !expected.contains(f)).toList();
+      // The original MOBI/AZW/AZW3 is kept next to a converted EPUB.
+      final stem = p.basenameWithoutExtension(book.storedPath);
+      bool isExpected(String f) =>
+          f == p.basename(book.storedPath) ||
+          f == 'cover.jpg' ||
+          (p.basenameWithoutExtension(f) == stem && isKindleFormat(f));
+      final unexpected = contents.where((f) => !isExpected(f)).toList();
       if (unexpected.isNotEmpty) {
         if (!mounted) return;
         final confirm = await showDialog<bool>(

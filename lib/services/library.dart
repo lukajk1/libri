@@ -122,10 +122,16 @@ Future<Uint8List?> extractEpubCoverBytes(String bookPath) async {
   }
 }
 
+// PDFium can't open paths past MAX_PATH, but Dart can read them, so hand those
+// over as bytes instead.
+Future<PdfDocument> openPdf(String path) async => path.length < 260
+    ? PdfDocument.openFile(path)
+    : PdfDocument.openData(await File(path).readAsBytes(), sourceName: path);
+
 Future<Uint8List?> extractPdfCoverBytes(String bookPath) async {
   PdfDocument? doc;
   try {
-    doc = await PdfDocument.openFile(bookPath);
+    doc = await openPdf(bookPath);
     final page = doc.pages.first;
     // Render at a fixed width so covers are sharp without being huge.
     const targetWidth = 600.0;
@@ -219,9 +225,38 @@ bool _isImage(Uint8List b) =>
         (b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46) || // GIF
         (b[0] == 0x42 && b[1] == 0x4D)); // BMP
 
+const _calibreDir = r'C:\Program Files\Calibre2';
+
+bool isKindleFormat(String path) =>
+    const {'.mobi', '.azw', '.azw3'}.contains(p.extension(path).toLowerCase());
+
+/// Converts a MOBI/AZW/AZW3 book to an EPUB beside it with Calibre's
+/// ebook-convert, keeping the original. Returns the EPUB path, or null if
+/// Calibre isn't installed or the conversion failed.
+Future<String?> convertToEpub(String bookPath) async {
+  final exe = p.join(_calibreDir, 'ebook-convert.exe');
+  if (!await File(exe).exists()) return null;
+  final out = p.setExtension(bookPath, '.epub');
+  if (await File(out).exists()) return out;
+  // Convert into temp first so a failed or interrupted run never leaves a
+  // half-written EPUB in the library.
+  final tmp = p.join(Directory.systemTemp.path, 'libri_convert_${DateTime.now().microsecondsSinceEpoch}.epub');
+  try {
+    final result = await Process.run(exe, [bookPath, tmp]);
+    if (result.exitCode != 0 || !await File(tmp).exists()) return null;
+    await File(tmp).copy(out);
+    return out;
+  } catch (_) {
+    return null;
+  } finally {
+    final f = File(tmp);
+    if (await f.exists()) await f.delete();
+  }
+}
+
 // Fallback for anything the built-in extractors can't handle, if Calibre is installed.
 Future<Uint8List?> extractCalibreCoverBytes(String bookPath) async {
-  const calibre = r'C:\Program Files\Calibre2\ebook-meta.exe';
+  final calibre = p.join(_calibreDir, 'ebook-meta.exe');
   if (!await File(calibre).exists()) return null;
   final tmp = p.join(Directory.systemTemp.path, 'libri_cover_${DateTime.now().millisecondsSinceEpoch}.jpg');
   try {
@@ -244,7 +279,7 @@ Future<Uint8List?> extractCoverBytes(String bookPath) async {
     coverBytes = await extractEpubCoverBytes(bookPath);
   } else if (ext == '.pdf') {
     coverBytes = await extractPdfCoverBytes(bookPath);
-  } else if (ext == '.mobi' || ext == '.azw' || ext == '.azw3') {
+  } else if (isKindleFormat(bookPath)) {
     coverBytes = await extractMobiCoverBytes(bookPath);
   }
   return coverBytes ?? await extractCalibreCoverBytes(bookPath);
@@ -261,8 +296,9 @@ Future<Uint8List?> loadOrExtractCover(String bookPath) async {
   return bytes;
 }
 
-// Windows' MAX_PATH. The name is used for both the book's folder and its file,
-// so it gets half of whatever is left after the books dir and extension.
+// Windows' MAX_PATH. Dart copes with longer paths but PDFium and some readers
+// don't, so keep new imports under it. The name is used for both the book's
+// folder and its file, so it gets half of what's left after the books dir.
 const _maxPath = 259;
 
 String bookNameFor(String sourcePath, Directory booksDirPath) {

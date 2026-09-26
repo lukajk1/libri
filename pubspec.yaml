@@ -41,6 +41,8 @@ dependencies:
   archive: ^3.4.0
   xml: ^6.0.0
   pdfrx: ^2.4.5
+  sqlite3: ^3.5.2
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

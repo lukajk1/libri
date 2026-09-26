@@ -4,11 +4,13 @@ enum BookStatus { none, toRead, reading, completed, dropped }
 
 class BookEntry {
   final String fileName;
-  final String storedPath;
+  String storedPath;
   final Uint8List? coverBytes;
   final int importedAt;
   BookStatus status;
   int statusChangedAt;
+  /// Reading progress (0..1) read back from the reader app, if known.
+  double? progress;
 
   BookEntry({
     required this.fileName,

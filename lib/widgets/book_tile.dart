@@ -110,6 +110,13 @@ class _BookTileState extends State<BookTile> {
                 ),
               ),
               const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(
+                  '${((widget.book.progress ?? 0) * 100).round()}%',
+                  style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.white54),
+                ),
+              ),
               Text(
                 widget.book.fileName,
                 maxLines: 2,
