@@ -12,9 +12,12 @@ class LibrarySection extends StatefulWidget {
     required this.onSetStatus,
     required this.onRemove,
     this.alwaysExpanded = false,
+    this.color,
   });
 
   final String title;
+  /// Status color for the title; plain if null.
+  final Color? color;
   final List<BookEntry> books;
   final ValueNotifier<String?> selectedPath;
   final void Function(BookEntry, BookStatus) onSetStatus;
@@ -51,7 +54,7 @@ class _LibrarySectionState extends State<LibrarySection> {
             const SizedBox(width: 6),
           ],
           Text(widget.title,
-              style: const TextStyle(fontSize: 13, color: Colors.white54, fontWeight: FontWeight.w600)),
+              style: TextStyle(fontSize: 13, color: widget.color ?? Colors.white54, fontWeight: FontWeight.w600)),
           const SizedBox(width: 8),
           Text('${widget.books.length}',
               style: const TextStyle(fontSize: 12, color: Colors.white24)),

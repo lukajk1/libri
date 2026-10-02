@@ -1,9 +1,9 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
@@ -11,6 +11,7 @@ import '../models/book_entry.dart';
 import '../services/library.dart';
 import '../services/progress.dart';
 import '../widgets/section.dart';
+import '../widgets/status_label.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
@@ -26,19 +27,51 @@ class _LibraryPageState extends State<LibraryPage> with WindowListener {
   bool _loading = true;
   bool _refreshingProgress = false;
   bool _converting = false;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+  String _query = '';
 
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    HardwareKeyboard.instance.addHandler(_handleKey);
     _init();
   }
 
   @override
   void dispose() {
     windowManager.removeListener(this);
+    HardwareKeyboard.instance.removeHandler(_handleKey);
+    _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
+
+  // Ctrl+F focuses search, Esc clears it. Ignored while a dialog or menu is up.
+  bool _handleKey(KeyEvent event) {
+    if (event is! KeyDownEvent || ModalRoute.of(context)?.isCurrent != true) return false;
+    if (event.logicalKey == LogicalKeyboardKey.keyF && HardwareKeyboard.instance.isControlPressed) {
+      _searchFocus.requestFocus();
+      _searchController.selection = TextSelection(baseOffset: 0, extentOffset: _searchController.text.length);
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape && (_searchFocus.hasFocus || _query.isNotEmpty)) {
+      _clearSearch();
+      return true;
+    }
+    return false;
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _searchFocus.unfocus();
+    setState(() => _query = '');
+  }
+
+  /// Words of the search query; a book matches when its title contains all of them.
+  List<String> get _searchWords =>
+      _query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
 
   // Coming back to libri usually means a reader was just closed.
   @override
@@ -263,6 +296,10 @@ class _LibraryPageState extends State<LibraryPage> with WindowListener {
               ),
             ],
           ),
+          actions: [
+            _searchField(),
+            const SizedBox(width: 8),
+          ],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -270,8 +307,70 @@ class _LibraryPageState extends State<LibraryPage> with WindowListener {
                 ? _noLibraryState()
                 : _books.isEmpty
                     ? _emptyState()
-                    : _sections(),
+                    : _searchWords.isNotEmpty
+                        ? _searchResults()
+                        : _sections(),
       ),
+    );
+  }
+
+  Widget _searchField() {
+    return Center(
+      child: SizedBox(
+        width: 200,
+        child: TextField(
+          controller: _searchController,
+          focusNode: _searchFocus,
+          onChanged: (v) => setState(() => _query = v),
+          style: const TextStyle(fontSize: 12),
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: 'Search titles',
+            hintStyle: const TextStyle(fontSize: 12, color: Colors.white30),
+            prefixIcon: const Icon(Icons.search, size: 14, color: Colors.white38),
+            prefixIconConstraints: const BoxConstraints(minWidth: 28),
+            suffixIcon: _query.isEmpty
+                ? null
+                : MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: _clearSearch,
+                      child: const Icon(Icons.close, size: 14, color: Colors.white38),
+                    ),
+                  ),
+            suffixIconConstraints: const BoxConstraints(minWidth: 28),
+            contentPadding: const EdgeInsets.symmetric(vertical: 5),
+            filled: true,
+            fillColor: Colors.white.withValues(alpha: 0.06),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _searchResults() {
+    final words = _searchWords;
+    final matches = _books.where((b) {
+      final title = b.fileName.toLowerCase();
+      return words.every(title.contains);
+    }).toList()
+      ..sort((a, b) => b.importedAt.compareTo(a.importedAt));
+
+    if (matches.isEmpty) {
+      return Center(
+        child: Text('No titles match "${_query.trim()}"',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 15)),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        LibrarySection(title: 'Results', books: matches, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook, alwaysExpanded: true),
+      ],
     );
   }
 
@@ -321,10 +420,10 @@ class _LibraryPageState extends State<LibraryPage> with WindowListener {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
-        LibrarySection(title: 'Reading', books: reading, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook, alwaysExpanded: true),
-        LibrarySection(title: 'To Read', books: toRead, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
-        LibrarySection(title: 'Completed', books: completed, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
-        LibrarySection(title: 'Dropped', books: dropped, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'Reading', color: BookStatus.reading.color, books: reading, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook, alwaysExpanded: true),
+        LibrarySection(title: 'To Read', color: BookStatus.toRead.color, books: toRead, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'Completed', color: BookStatus.completed.color, books: completed, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
+        LibrarySection(title: 'Dropped', color: BookStatus.dropped.color, books: dropped, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook),
         LibrarySection(title: 'All', books: all, selectedPath: _selectedPath, onSetStatus: _setStatus, onRemove: _removeBook, alwaysExpanded: true),
       ],
     );
